@@ -1,6 +1,3 @@
-extern crate dbus;
-extern crate hex;
-
 pub use bluetooth_adapter::BluetoothAdapter;
 pub use bluetooth_device::BluetoothDevice;
 pub use bluetooth_discovery_session::BluetoothDiscoverySession;
@@ -21,3 +18,30 @@ pub mod bluetooth_gatt_service;
 pub mod bluetooth_obex;
 pub mod bluetooth_session;
 mod bluetooth_utils;
+
+
+
+#[derive(thiserror::Error, Debug)]
+pub enum BlurzError {
+
+    #[error(transparent)]
+    DbusError {
+        #[from]
+        source: dbus::Error
+    },
+
+    #[error("An unkown error has ocurred: {0}")]
+    UnkownError(String),
+
+    #[error("Function {0} not implemented")]
+    NotImplemented(String),
+
+    #[error("Bluetooth adapter not found")]
+    AdapterNotFound,
+
+    #[error("No device found")]
+    NoDeviceFound,
+
+    #[error("Deprecated, please us {0}")]
+    DeprecatedFeature(String),
+}

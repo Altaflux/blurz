@@ -1,6 +1,6 @@
-use bluetooth_session::BluetoothSession;
+use crate::bluetooth_session::BluetoothSession;
 use dbus::{Message, MessageItem, MessageItemArray, Signature};
-use std::error::Error;
+use crate::BlurzError;
 
 static ADAPTER_INTERFACE: &'static str = "org.bluez.Adapter1";
 static SERVICE_NAME: &'static str = "org.bluez";
@@ -14,7 +14,7 @@ impl<'a> BluetoothDiscoverySession<'a> {
     pub fn create_session(
         session: &'a BluetoothSession,
         adapter: String,
-    ) -> Result<BluetoothDiscoverySession, Box<Error>> {
+    ) -> Result<BluetoothDiscoverySession, BlurzError> {
         Ok(BluetoothDiscoverySession::new(session, adapter))
     }
 
@@ -25,30 +25,29 @@ impl<'a> BluetoothDiscoverySession<'a> {
         }
     }
 
-    fn call_method(&self, method: &str, param: Option<[MessageItem; 1]>) -> Result<(), Box<Error>> {
-        let mut m = try!(Message::new_method_call(
+    fn call_method(&self, method: &str, param: Option<[MessageItem; 1]>) -> Result<(), BlurzError> {
+        let mut m = Message::new_method_call(
             SERVICE_NAME,
             &self.adapter,
             ADAPTER_INTERFACE,
             method
-        ));
+        ).map_err(|err| BlurzError::UnkownError(err))?;
         match param {
             Some(p) => m.append_items(&p),
             None => (),
         };
-        try!(
-            self.session
-                .get_connection()
-                .send_with_reply_and_block(m, 1000)
-        );
+        
+        self.session
+            .get_connection()
+            .send_with_reply_and_block(m, 1000)?;
         Ok(())
     }
 
-    pub fn start_discovery(&self) -> Result<(), Box<Error>> {
+    pub fn start_discovery(&self) -> Result<(), BlurzError> {
         self.call_method("StartDiscovery", None)
     }
 
-    pub fn stop_discovery(&self) -> Result<(), Box<Error>> {
+    pub fn stop_discovery(&self) -> Result<(), BlurzError> {
         self.call_method("StopDiscovery", None)
     }
 
@@ -57,7 +56,7 @@ impl<'a> BluetoothDiscoverySession<'a> {
         uuids: Vec<String>,
         rssi: Option<i16>,
         pathloss: Option<u16>,
-    ) -> Result<(), Box<Error>> {
+    ) -> Result<(), BlurzError> {
         let uuids = {
             let mut res: Vec<MessageItem> = Vec::new();
             for u in uuids {

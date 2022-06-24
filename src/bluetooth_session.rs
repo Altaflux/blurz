@@ -1,6 +1,5 @@
 use dbus::{BusType, ConnMsgs, Connection};
-
-use std::error::Error;
+use crate::BlurzError;
 
 static BLUEZ_MATCH: &'static str = "type='signal',sender='org.bluez'";
 
@@ -10,7 +9,7 @@ pub struct BluetoothSession {
 }
 
 impl BluetoothSession {
-    pub fn create_session(path: Option<&str>) -> Result<BluetoothSession, Box<Error>> {
+    pub fn create_session(path: Option<&str>) -> Result<BluetoothSession, BlurzError> {
         let rule = {
             if let Some(path) = path {
                 format!("{},path='{}'", BLUEZ_MATCH, path)
@@ -19,7 +18,7 @@ impl BluetoothSession {
             }
         };
 
-        let c = try!(Connection::get_private(BusType::System));
+        let c = Connection::get_private(BusType::System)?;
         c.add_match(rule.as_str())?;
         Ok(BluetoothSession::new(c))
     }

@@ -1,4 +1,3 @@
-extern crate blurz;
 
 use std::error::Error;
 use std::thread;
@@ -12,7 +11,7 @@ use blurz::BluetoothGATTService;
 use blurz::BluetoothGATTCharacteristic;
 
 
-fn test6() -> Result<(), Box<Error>> {
+fn test6() -> Result<(), Box<dyn Error>> {
     let bt_session = &Session::create_session(None)?;
     let adapter: Adapter = Adapter::init(bt_session)?;
     adapter.set_powered(true)?;
@@ -29,7 +28,7 @@ fn test6() -> Result<(), Box<Error>> {
     println!("{} device(s) found", devices.len());
     println!();
 
-    'device_loop: for d in devices {
+    for d in devices {
         let device = Device::new(bt_session, d.clone());
 
         println!(
