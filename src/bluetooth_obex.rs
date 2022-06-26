@@ -1,11 +1,15 @@
-use dbus::arg::{Dict, Variant};
+use dbus::arg::{Variant};
 use dbus::Path as ObjectPath;
-use dbus::{BusType, Connection, Message, MessageItem, Props};
+use dbus::{blocking::{Connection, BlockingSender}, Message};
+use dbus::blocking::stdintf::org_freedesktop_dbus::Properties;
+use dbus::arg::messageitem::MessageItem;
+use std::time::Duration;
 use std::collections::HashMap;
-use std::error::Error;
+
 use std::path::Path;
 use std::thread::sleep;
-use std::time::Duration;
+
+use crate::BlurzError;
 
 use crate::bluetooth_device::BluetoothDevice;
 use crate::bluetooth_session::BluetoothSession;
@@ -56,8 +60,8 @@ impl TransferState {
     }
 }
 
-pub fn open_bus_connection() -> Result<Connection, Box<dyn Error>> {
-    let c = Connection::get_private(BusType::Session)?;
+pub fn open_bus_connection() -> Result<Connection, BlurzError> {
+    let c = Connection::new_session()?;
     Ok(c)
 }
 
@@ -71,19 +75,19 @@ impl<'a> BluetoothOBEXSession<'a> {
     pub fn new(
         session: &'a BluetoothSession,
         device: &BluetoothDevice,
-    ) -> Result<BluetoothOBEXSession<'a>, Box<dyn Error>> {
+    ) -> Result<BluetoothOBEXSession<'a>, BlurzError> {
         let device_address: String = device.get_address()?;
         let mut map = HashMap::new();
         map.insert("Target", Variant(SessionTarget::Opp.as_str()));
-        let args: Dict<&str, Variant<&str>, _> = Dict::new(map);
-        let m = Message::new_method_call(OBEX_BUS, OBEX_PATH, CLIENT_INTERFACE, "CreateSession")?
-            .append2(device_address, args);
+        let m = Message::new_method_call(OBEX_BUS, OBEX_PATH, CLIENT_INTERFACE, "CreateSession")
+            .map_err(|err| BlurzError::UnkownError(err))?
+            .append2(device_address, map);
 
         let r = session
             .get_connection()
-            .send_with_reply_and_block(m, 1000)?;
+            .send_with_reply_and_block(m, std::time::Duration::from_millis(1000))?;
         let session_path: ObjectPath = r.read1()?;
-        let session_str: String = session_path.parse()?;
+        let session_str: String = session_path.parse().map_err(|_| BlurzError::UnkownError("Could not parse path".to_owned()))?;
         let obex_session = BluetoothOBEXSession {
             session,
             object_path: session_str,
@@ -92,14 +96,16 @@ impl<'a> BluetoothOBEXSession<'a> {
     }
 
     // https://git.kernel.org/pub/scm/bluetooth/bluez.git/tree/doc/obex-api.txt#n35
-    pub fn remove_session(&self) -> Result<(), Box<dyn Error>> {
-        let object_path = ObjectPath::new(self.object_path.as_bytes())?;
-        let m = Message::new_method_call(OBEX_BUS, OBEX_PATH, CLIENT_INTERFACE, "RemoveSession")?
+    pub fn remove_session(&self) -> Result<(), BlurzError> {
+        let object_path = ObjectPath::new(&self.object_path)
+            .map_err(|err| BlurzError::UnkownError(err))?;
+        let m = Message::new_method_call(OBEX_BUS, OBEX_PATH, CLIENT_INTERFACE, "RemoveSession")
+            .map_err(|err| BlurzError::UnkownError(err))?
             .append1(object_path);
         let _r = self
             .session
             .get_connection()
-            .send_with_reply_and_block(m, 1000)?;
+            .send_with_reply_and_block(m, std::time::Duration::from_millis(1000))?;
         Ok(())
     }
 }
@@ -115,17 +121,18 @@ impl<'a> BluetoothOBEXTransfer<'a> {
     pub fn send_file(
         session: &'a BluetoothOBEXSession,
         file_path: &str,
-    ) -> Result<BluetoothOBEXTransfer<'a>, Box<dyn Error>> {
+    ) -> Result<BluetoothOBEXTransfer<'a>, BlurzError> {
         let session_path: String = session.object_path.clone();
         let m =
-            Message::new_method_call(OBEX_BUS, session_path, OBJECT_PUSH_INTERFACE, "SendFile")?
+            Message::new_method_call(OBEX_BUS, session_path, OBJECT_PUSH_INTERFACE, "SendFile")
+                .map_err(|err| BlurzError::UnkownError(err))?
                 .append1(file_path);
         let r = session
             .session
             .get_connection()
-            .send_with_reply_and_block(m, 1000)?;
+            .send_with_reply_and_block(m, std::time::Duration::from_millis(1000))?;
         let transfer_path: ObjectPath = r.read1()?;
-        let transfer_str: String = transfer_path.parse()?;
+        let transfer_str: String = transfer_path.parse().map_err(|_| BlurzError::UnkownError("Could not parse path".to_owned()))?;
 
         let file_name: String = match Path::new(file_path).file_name() {
             Some(value) => value.to_string_lossy().to_string(),
@@ -141,23 +148,21 @@ impl<'a> BluetoothOBEXTransfer<'a> {
     }
 
     // https://git.kernel.org/pub/scm/bluetooth/bluez.git/tree/doc/obex-api.txt#n115
-    pub fn status(&self) -> Result<String, Box<dyn Error>> {
+    pub fn status(&self) -> Result<String, BlurzError> {
         let transfer_path = self.object_path.clone();
-        let p = Props::new(
-            &self.session.session.get_connection(),
-            OBEX_BUS,
-            transfer_path,
-            TRANSFER_INTERFACE,
-            1000,
-        );
-        let status: MessageItem = p.get("Status")?;
+
+        //let p = c.with_proxy(SERVICE_NAME, object_path, std::time::Duration::from_millis(1000));
+        //let metadata: MessageItem = p.get(interface, prop)?;
+
+        let p = &self.session.session.get_connection().with_proxy(OBEX_BUS, transfer_path, std::time::Duration::from_millis(1000));
+        let status: MessageItem = p.get(TRANSFER_INTERFACE, "Status")?;
         match status.inner::<&str>() {
             Ok(value) => Ok(value.to_string()),
-            Err(_) => Err("Failed to get status.".into()),
+            Err(_) => Err(BlurzError::FailedToGetStatus),
         }
     }
 
-    pub fn wait_until_transfer_completed(&self) -> Result<(), Box<dyn Error>> {
+    pub fn wait_until_transfer_completed(&self) -> Result<(), BlurzError> {
         sleep(Duration::from_millis(500));
         let mut transfer_status: String = self.status()?;
 

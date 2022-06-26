@@ -30,6 +30,13 @@ pub enum BlurzError {
         source: dbus::Error
     },
 
+    #[error(transparent)]
+    DbusErrorTypeMismatchError {
+        #[from]
+        source: dbus::arg::TypeMismatchError
+    },
+
+
     #[error("An unkown error has ocurred: {0}")]
     UnkownError(String),
 
@@ -44,4 +51,7 @@ pub enum BlurzError {
 
     #[error("Deprecated, please us {0}")]
     DeprecatedFeature(String),
+
+    #[error("Failed to get status.")]
+    FailedToGetStatus,
 }

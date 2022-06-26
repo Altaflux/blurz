@@ -1,7 +1,8 @@
 use crate::bluetooth_device::BluetoothDevice;
 use crate::bluetooth_session::BluetoothSession;
 use crate::bluetooth_utils;
-use dbus::MessageItem;
+use dbus::arg::messageitem::{MessageItem};
+use dbus::arg::{Arg, Append};
 use hex::FromHex;
 use crate::BlurzError;
 
@@ -75,7 +76,7 @@ impl<'a> BluetoothAdapter<'a> {
         )
     }
 
-    fn set_property<T>(&self, prop: &str, value: T, timeout_ms: i32) -> Result<(), BlurzError>
+    fn set_property<T: Arg + Append>(&self, prop: &str, value: T, timeout_ms: i32) -> Result<(), BlurzError>
     where
         T: Into<MessageItem>,
     {

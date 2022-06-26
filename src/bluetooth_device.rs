@@ -1,6 +1,7 @@
 use crate::bluetooth_session::BluetoothSession;
 use crate::bluetooth_utils;
-use dbus::MessageItem;
+use dbus::arg::messageitem::{MessageItem};
+use dbus::arg::{Arg, Append};
 use hex::FromHex;
 use std::collections::HashMap;
 use crate::BlurzError;
@@ -34,7 +35,7 @@ impl<'a> BluetoothDevice<'a> {
         )
     }
 
-    fn set_property<T>(&self, prop: &str, value: T, timeout_ms: i32) -> Result<(), BlurzError>
+    fn set_property<T: Arg + Append>(&self, prop: &str, value: T, timeout_ms: i32) -> Result<(), BlurzError>
     where
         T: Into<MessageItem>,
     {
@@ -228,10 +229,9 @@ impl<'a> BluetoothDevice<'a> {
         let manufacturer_data_array = self.get_property("ManufacturerData")?;
         let mut m = HashMap::new();
         let dict_vec = manufacturer_data_array
-            .inner::<&Vec<MessageItem>>()
+            .inner::<&[(MessageItem, MessageItem)]>()
             .unwrap();
-        for dict in dict_vec {
-            let (key, value) = dict.inner::<(&MessageItem, &MessageItem)>().unwrap();
+        for (key, value) in dict_vec {
             let v = value
                 .inner::<&MessageItem>()
                 .unwrap()
@@ -245,13 +245,13 @@ impl<'a> BluetoothDevice<'a> {
         Ok(m)
     }
 
+
     // http://git.kernel.org/cgit/bluetooth/bluez.git/tree/doc/device-api.txt#n210
     pub fn get_service_data(&self) -> Result<HashMap<String, Vec<u8>>, BlurzError> {
         let service_data_array = self.get_property("ServiceData")?;
         let mut m = HashMap::new();
-        let dict_vec = service_data_array.inner::<&Vec<MessageItem>>().unwrap();
-        for dict in dict_vec {
-            let (key, value) = dict.inner::<(&MessageItem, &MessageItem)>().unwrap();
+        let dict_vec = service_data_array.inner::<&[(MessageItem, MessageItem)]>().unwrap();
+        for (key, value) in dict_vec {
             let v = value
                 .inner::<&MessageItem>()
                 .unwrap()

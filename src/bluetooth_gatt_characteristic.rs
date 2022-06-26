@@ -1,7 +1,10 @@
 use crate::bluetooth_session::BluetoothSession;
 use crate::bluetooth_utils;
-use dbus::{BusType, Connection, Message, MessageItem, MessageItemArray, OwnedFd, Signature};
-
+use dbus::arg::{Variant, OwnedFd};
+use dbus::{blocking::{Connection, BlockingSender}, Message, arg::Arg};
+use dbus::arg::messageitem::{MessageItem, MessageItemArray, MessageItemDict};
+use dbus::Signature;
+use std::time::Duration;
 use crate::BlurzError;
 
 static SERVICE_NAME: &'static str = "org.bluez";
@@ -105,26 +108,28 @@ impl<'a> BluetoothGATTCharacteristic<'a> {
 
     // http://git.kernel.org/cgit/bluetooth/bluez.git/tree/doc/gatt-api.txt#n72
     pub fn read_value(&self, offset: Option<u16>) -> Result<Vec<u8>, BlurzError> {
-        let c = Connection::get_private(BusType::System)?;
+        let c = Connection::new_system()?;
         let mut m = Message::new_method_call(
             SERVICE_NAME,
             &self.object_path,
             GATT_CHARACTERISTIC_INTERFACE,
             "ReadValue"
         ).map_err(|err| BlurzError::UnkownError(err))?;
-        m.append_items(&[MessageItem::Array(
-            MessageItemArray::new(
+        m.append_items(&[MessageItem::Dict(
+            MessageItemDict::new(
                 match offset {
-                    Some(o) => vec![MessageItem::DictEntry(
-                        Box::new("offset".into()),
-                        Box::new(MessageItem::Variant(Box::new(o.into()))),
+                    Some(o) => vec![(
+                        MessageItem::from(Box::new("offset".into())),
+                        MessageItem::Variant(Box::new(o.into())),
                     )],
                     None => vec![],
                 },
-                Signature::from("a{sv}"),
-            ).unwrap(),
+                <String as Arg>::signature(),
+                <Variant<u8> as Arg>::signature(),
+            )
+            .unwrap(),
         )]);
-        let reply = c.send_with_reply_and_block(m, 1000)?;
+        let reply = c.send_with_reply_and_block(m, Duration::from_millis(1000))?;
         let items: MessageItem = reply.get1().unwrap();
         let z: &[MessageItem] = items.inner().unwrap();
         let mut v: Vec<u8> = Vec::new();
@@ -147,18 +152,20 @@ impl<'a> BluetoothGATTCharacteristic<'a> {
             "WriteValue",
             Some(&[
                 MessageItem::new_array(values_msgs).unwrap(),
-                MessageItem::Array(
-                    MessageItemArray::new(
+                MessageItem::Dict(
+                    MessageItemDict::new(
                         match offset {
-                            Some(o) => vec![MessageItem::DictEntry(
-                                Box::new("offset".into()),
-                                Box::new(MessageItem::Variant(Box::new(o.into()))),
+                            Some(o) => vec![(
+                                MessageItem::from(Box::new("offset".into())),
+                                MessageItem::Variant(Box::new(o.into())),
                             )],
                             None => vec![],
                         },
-                        Signature::from("a{sv}"),
-                    ).unwrap(),
-                ),
+                        <String as Arg>::signature(),
+                        <Variant<u8> as Arg>::signature(),
+                    )
+                    .unwrap(),
+                )
             ]),
             10000,
         )
@@ -187,7 +194,7 @@ impl<'a> BluetoothGATTCharacteristic<'a> {
         let reply = self
             .session
             .get_connection()
-            .send_with_reply_and_block(m, 1000)?;
+            .send_with_reply_and_block(m, Duration::from_millis(1000))?;
         let (opt_fd, opt_mtu) = reply.get2::<OwnedFd, u16>();
         Ok((opt_fd.unwrap(), opt_mtu.unwrap()))
     }
@@ -205,7 +212,7 @@ impl<'a> BluetoothGATTCharacteristic<'a> {
         let reply = self
             .session
             .get_connection()
-            .send_with_reply_and_block(m, 1000)?;
+            .send_with_reply_and_block(m, Duration::from_millis(1000))?;
         let (opt_fd, opt_mtu) = reply.get2::<OwnedFd, u16>();
         Ok((opt_fd.unwrap(), opt_mtu.unwrap()))
     }

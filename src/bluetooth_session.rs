@@ -1,11 +1,17 @@
-use dbus::{BusType, ConnMsgs, Connection};
+use dbus::{blocking::{Connection}, message::MatchRule, channel::MatchingReceiver, Message};
 use crate::BlurzError;
 
 static BLUEZ_MATCH: &'static str = "type='signal',sender='org.bluez'";
 
-#[derive(Debug)]
+
 pub struct BluetoothSession {
     connection: Connection,
+}
+
+impl core::fmt::Debug for BluetoothSession {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BluetoothSession").finish()
+    }
 }
 
 impl BluetoothSession {
@@ -18,8 +24,9 @@ impl BluetoothSession {
             }
         };
 
-        let c = Connection::get_private(BusType::System)?;
-        c.add_match(rule.as_str())?;
+        let c = Connection::new_system()?;
+        
+        c.add_match_no_cb(&rule)?;
         Ok(BluetoothSession::new(c))
     }
 
@@ -33,7 +40,17 @@ impl BluetoothSession {
         &self.connection
     }
 
-    pub fn incoming(&self, timeout_ms: u32) -> ConnMsgs<&Connection> {
-        self.connection.incoming(timeout_ms)
+
+    pub fn incoming<T>(&self, timeout_ms: u32, receiver : T ) -> Result<(), BlurzError>
+        where T: Fn(Message) + Send + 'static {
+    
+        let receiver_id = self.connection.start_receive(MatchRule::new(), Box::new(move |message: Message, _| {
+            receiver(message);
+            true
+        }));
+    
+        self.connection.process(std::time::Duration::from_millis(timeout_ms.into()))?;
+        self.connection.stop_receive(receiver_id);
+        Ok(())
     }
 }

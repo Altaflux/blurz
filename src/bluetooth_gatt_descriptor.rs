@@ -1,9 +1,16 @@
 use crate::bluetooth_session::BluetoothSession;
 use crate::bluetooth_utils;
-use dbus::{BusType, Connection, Message, MessageItem, MessageItemArray, Signature};
-
 use crate::BlurzError;
 
+use dbus::arg::messageitem::{MessageItem, MessageItemDict};
+use dbus::arg::Variant;
+
+use dbus::{
+    arg::{Arg},
+    blocking::{BlockingSender, Connection},
+    Message,
+};
+use std::time::Duration;
 static SERVICE_NAME: &'static str = "org.bluez";
 static GATT_DESCRIPTOR_INTERFACE: &'static str = "org.bluez.GattDescriptor1";
 
@@ -92,28 +99,32 @@ impl<'a> BluetoothGATTDescriptor<'a> {
      * Methods
      */
 
+
     // http://git.kernel.org/cgit/bluetooth/bluez.git/tree/doc/gatt-api.txt#n174
     pub fn read_value(&self, offset: Option<u16>) -> Result<Vec<u8>, BlurzError> {
-        let c = Connection::get_private(BusType::System)?;
+        let c = Connection::new_system()?;
         let mut m = Message::new_method_call(
             SERVICE_NAME,
             &self.object_path,
             GATT_DESCRIPTOR_INTERFACE,
-            "ReadValue"
-        ).map_err(|err| BlurzError::UnkownError(err))?;
-        m.append_items(&[MessageItem::Array(
-            MessageItemArray::new(
+            "ReadValue",
+        )
+        .map_err(|err| BlurzError::UnkownError(err))?;
+        m.append_items(&[MessageItem::Dict(
+            MessageItemDict::new(
                 match offset {
-                    Some(o) => vec![MessageItem::DictEntry(
-                        Box::new("offset".into()),
-                        Box::new(MessageItem::Variant(Box::new(o.into()))),
+                    Some(o) => vec![(
+                        MessageItem::from(Box::new("offset".into())),
+                        MessageItem::Variant(Box::new(o.into())),
                     )],
                     None => vec![],
                 },
-                Signature::from("a{sv}"),
-            ).unwrap(),
+                <String as Arg>::signature(),
+                <Variant<u8> as Arg>::signature(),
+            )
+            .unwrap(),
         )]);
-        let reply = c.send_with_reply_and_block(m, 1000)?;
+        let reply = c.send_with_reply_and_block(m, Duration::from_millis(1000))?;
         let items: MessageItem = reply.get1().unwrap();
         let z: &[MessageItem] = items.inner().unwrap();
         let mut v: Vec<u8> = Vec::new();
@@ -136,17 +147,19 @@ impl<'a> BluetoothGATTDescriptor<'a> {
             "WriteValue",
             Some(&[
                 MessageItem::new_array(args).unwrap(),
-                MessageItem::Array(
-                    MessageItemArray::new(
+                MessageItem::Dict(
+                    MessageItemDict::new(
                         match offset {
-                            Some(o) => vec![MessageItem::DictEntry(
-                                Box::new("offset".into()),
-                                Box::new(MessageItem::Variant(Box::new(o.into()))),
+                            Some(o) => vec![(
+                                MessageItem::from(Box::new("offset".into())),
+                                MessageItem::Variant(Box::new(o.into())),
                             )],
                             None => vec![],
                         },
-                        Signature::from("a{sv}"),
-                    ).unwrap(),
+                        <String as Arg>::signature(),
+                        <Variant<u8> as Arg>::signature(),
+                    )
+                    .map_err(|_| BlurzError::UnkownError("".to_owned()))?,
                 ),
             ]),
             1000,

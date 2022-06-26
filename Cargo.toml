@@ -14,6 +14,7 @@ name = "blurz"
 path = "src/lib.rs"
 
 [dependencies]
-dbus = "0.6"
-hex = "0.3"
+dbus = "0.9.5"
+hex = "0.4.3"
 thiserror = "1.0.31"
+derivative = "2.2.0"

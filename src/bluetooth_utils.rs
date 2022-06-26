@@ -1,4 +1,6 @@
-use dbus::{Connection, Message, MessageItem, Props};
+use dbus::{blocking::{Connection, BlockingSender}, Message, arg::{Arg, Append}};
+use dbus::blocking::stdintf::org_freedesktop_dbus::Properties;
+use dbus::arg::messageitem::MessageItem;
 use crate::BlurzError;
 
 static ADAPTER_INTERFACE: &'static str = "org.bluez.Adapter1";
@@ -15,19 +17,17 @@ fn get_managed_objects(c: &Connection) -> Result<Vec<MessageItem>, BlurzError> {
         "org.freedesktop.DBus.ObjectManager",
         "GetManagedObjects"
     ).map_err(|err| BlurzError::UnkownError(err))?;
-    let r = c.send_with_reply_and_block(m, 1000)?;
+    
+    let r = c.send_with_reply_and_block(m, std::time::Duration::from_millis(1000))?;
     Ok(r.get_items())
 }
 
 pub fn get_adapters(c: &Connection) -> Result<Vec<String>, BlurzError> {
     let mut adapters: Vec<String> = Vec::new();
     let objects: Vec<MessageItem> = get_managed_objects(&c)?;
-    let z: &[MessageItem] = objects.get(0).unwrap().inner().unwrap();
-    for y in z {
-        let (path, interfaces) = y.inner().unwrap();
-        let x: &[MessageItem] = interfaces.inner().unwrap();
-        for interface in x {
-            let (i, _) = interface.inner().unwrap();
+    let z: &[(MessageItem, MessageItem)] = objects.get(0).unwrap().inner().unwrap();
+    for (path, interfaces) in z {
+        for (i, _) in interfaces.inner::<&[(MessageItem, MessageItem)]>().unwrap() {
             let name: &str = i.inner().unwrap();
             if name == ADAPTER_INTERFACE {
                 let p: &str = path.inner().unwrap();
@@ -35,6 +35,7 @@ pub fn get_adapters(c: &Connection) -> Result<Vec<String>, BlurzError> {
             }
         }
     }
+    println!("{:?}", adapters);
     Ok(adapters)
 }
 
@@ -65,12 +66,9 @@ fn list_item(
 ) -> Result<Vec<String>, BlurzError> {
     let mut v: Vec<String> = Vec::new();
     let objects: Vec<MessageItem> = get_managed_objects(&c)?;
-    let z: &[MessageItem] = objects.get(0).unwrap().inner().unwrap();
-    for y in z {
-        let (path, interfaces) = y.inner().unwrap();
-        let x: &[MessageItem] = interfaces.inner().unwrap();
-        for interface in x {
-            let (i, _) = interface.inner().unwrap();
+    let z: &[(MessageItem, MessageItem)] = objects.get(0).unwrap().inner().unwrap();
+    for (path, interfaces) in z {
+        for (i, _) in interfaces.inner::<&[(MessageItem, MessageItem)]>().unwrap() {
             let name: &str = i.inner().unwrap();
             if name == item_interface {
                 let objpath: &str = path.inner().unwrap();
@@ -91,11 +89,12 @@ pub fn get_property(
     object_path: &str,
     prop: &str,
 ) -> Result<MessageItem, BlurzError> {
-    let p = Props::new(&c, SERVICE_NAME, object_path, interface, 1000);
-    Ok(p.get(prop)?.clone())
+    let p = c.with_proxy(SERVICE_NAME, object_path, std::time::Duration::from_millis(1000));
+    let metadata: MessageItem = p.get(interface, prop)?;
+    Ok(metadata)
 }
 
-pub fn set_property<T>(
+pub fn set_property<T: Arg + Append>(
     c: &Connection,
     interface: &str,
     object_path: &str,
@@ -106,8 +105,9 @@ pub fn set_property<T>(
 where
     T: Into<MessageItem>,
 {
-    let p = Props::new(&c, SERVICE_NAME, object_path, interface, timeout_ms);
-    Ok(p.set(prop, value.into())?)
+    let p = c.with_proxy(SERVICE_NAME, object_path, std::time::Duration::from_millis(timeout_ms.try_into().unwrap()));
+    p.set(interface, prop, dbus::arg::Variant(value))?;
+    Ok(())
 }
 
 pub fn call_method(
@@ -128,6 +128,6 @@ pub fn call_method(
         Some(p) => m.append_items(p),
         None => (),
     };
-    c.send_with_reply_and_block(m, timeout_ms)?;
+    c.send_with_reply_and_block(m,std::time::Duration::from_millis(timeout_ms.try_into().unwrap()))?;
     Ok(())
 }
